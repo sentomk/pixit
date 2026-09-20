@@ -1,6 +1,6 @@
 {
-	"name": "pixit",
-	"version": "0.1.0",
+	"name": "@sentomk/pixit",
+	"version": "0.1.1",
 	"description": "SentoMK's pi coding agent extensions: questionnaire tool with /answer extraction, xedit, custom status footer",
 	"license": "MIT",
 	"repository": {
@@ -8,6 +8,10 @@
 		"url": "git+https://github.com/sentomk/pixit.git"
 	},
 	"type": "module",
+	"files": [
+		"extensions",
+		"themes"
+	],
 	"keywords": [
 		"pi-package",
 		"pi-extension"
@@ -19,6 +23,10 @@
 		"themes": [
 			"./themes"
 		]
+	},
+	"publishConfig": {
+		"registry": "https://registry.npmjs.org/",
+		"access": "public"
 	},
 	"dependencies": {
 		"diff": "^8.0.2"

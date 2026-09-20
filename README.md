@@ -5,7 +5,7 @@ My [pi coding agent](https://buildwithpi.ai/) package: extensions, skills, and t
 Install with:
 
 ```bash
-pi install npm:pixit
+pi install npm:@sentomk/pixit
 ```
 
 ## Extensions
@@ -41,18 +41,23 @@ node --experimental-strip-types tests/test-select-list.mjs
 Local testing without publishing:
 
 ```bash
-pi install /absolute/path/to/sentomk
+pi install /absolute/path/to/pixit
 ```
 
 Or try it for one run only:
 
 ```bash
-pi -e /absolute/path/to/sentomk
+pi -e /absolute/path/to/pixit
 ```
 
-Publish a new version:
+Publish a new version (publishes to the public npm registry, as
+`@sentomk/pixit` — see `publishConfig` in package.json):
 
 ```bash
+npm login --registry https://registry.npmjs.org/   # once per machine
 npm version patch   # or minor / major
 npm publish
 ```
+
+Note: commit the version bump before publishing so the `gitHead` recorded
+in the package metadata points at the released tree.
