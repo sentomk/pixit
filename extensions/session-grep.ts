@@ -14,6 +14,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { pickFromList } from "./lib/select-list.ts";
 
 const MAX_RESULTS = 40;
 const TAIL_BYTES = 256 * 1024;
@@ -153,12 +154,12 @@ export default function (pi: ExtensionAPI) {
 
 			const items = hits.map((h, i) => ({
 				value: String(i),
-				label: `[${h.role}] ${h.text.split("\n")[h.matchLine - 1]?.trim().slice(0, 60) ?? ""}`,
+				label: `[${h.role}] ${h.text.split("\n")[h.matchLine - 1]?.trim().slice(0, 80) ?? ""}`,
 				description: `${h.sessionName} · ${new Date(h.timestamp).toLocaleString()}`,
 			}));
 
-			const picked = await ctx.ui.select(`${hits.length} match(es) for "${query}"`, items);
-			if (!picked) return;
+			const picked = await pickFromList(ctx, `${hits.length} match(es) for "${query}"`, items);
+			if (picked === null) return;
 
 			const hit = hits[Number(picked)]!;
 			// Print the full message into the chat without triggering a turn.

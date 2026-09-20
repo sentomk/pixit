@@ -14,6 +14,7 @@
 import { complete } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { BorderedLoader } from "@earendil-works/pi-coding-agent";
+import { pickFromList } from "./lib/select-list.ts";
 
 const MAX_CONTEXT_CHARS = 24000;
 
@@ -77,7 +78,19 @@ function listCandidates(ctx: ExtensionContext): CandidateModel[] {
 		}
 	}
 
-	return candidates.filter((m) => !(m.provider === currentProvider && m.id === currentId));
+	// De-duplicate and drop the model that is currently answering.
+	const seen = new Set<string>();
+	return candidates.filter((m) => {
+		if (m.provider === currentProvider && m.id === currentId) return false;
+		const key = `${m.provider}/${m.id}`;
+		if (seen.has(key)) return false;
+		seen.add(key);
+		return true;
+	});
+}
+
+function modelLabel(model: CandidateModel): string {
+	return `${model.provider}/${model.id}`;
 }
 
 export default function (pi: ExtensionAPI) {
@@ -95,16 +108,16 @@ export default function (pi: ExtensionAPI) {
 		if (candidates.length === 1) return candidates[0]!;
 
 		if (!ctx.hasUI) return candidates[0]!;
-		const picked = await ctx.ui.select(
+		const picked = await pickFromList(
+			ctx,
 			"Second opinion from which model?",
-			candidates.slice(0, 20).map((m) => ({
-				value: `${m.provider}\u0000${m.id}`,
-				label: `${m.provider}/${m.id}`,
+			candidates.slice(0, 50).map((m) => ({
+				value: modelLabel(m),
+				label: modelLabel(m),
 			})),
 		);
-		if (!picked) return null;
-		const [provider, id] = picked.split("\u0000");
-		return { provider: provider!, id: id! };
+		if (picked === null) return null;
+		return candidates.find((m) => modelLabel(m) === picked) ?? null;
 	}
 
 	async function soHandler(ctx: ExtensionContext, args: string): Promise<void> {

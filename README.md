@@ -33,6 +33,7 @@ Run tests:
 ```bash
 node --experimental-strip-types tests/test-xedit.mjs
 node --experimental-strip-types tests/test-checkpoint.mjs
+node --experimental-strip-types tests/test-select-list.mjs
 ```
 
 ## Development

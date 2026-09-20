@@ -40,6 +40,9 @@ function git(args: string[], cwd: string, env?: Record<string, string>, buffer =
 		env: env ? { ...process.env, ...env } : process.env,
 		encoding: buffer ? "buffer" : "utf8",
 		windowsHide: true,
+		// Keep git's stderr out of the chat: probe failures (not a repo) are
+		// expected and handled by the caller.
+		stdio: ["ignore", "pipe", "ignore"],
 	});
 }
 
@@ -80,16 +83,31 @@ function writeTreeSnapshot(cwd: string): string | null {
 }
 
 interface CheckpointState {
-	enabled: boolean;
-	lastTree: string | null;
+	/** "unknown" until probed once per session; probing is cached so turn_start stays cheap. */
+	repo: "unknown" | "enabled" | "disabled";
 	/** Snapshot commit the working tree currently matches (set after /undo). */
 	undoPos: string | null;
 }
 
-const state: CheckpointState & { enabled: boolean } = { enabled: false, lastTree: null, undoPos: null };
+const state: CheckpointState = { repo: "unknown", undoPos: null };
+
+/** Probe (once per session) whether cwd is inside a git work tree. */
+function isGitRepo(ctx: ExtensionContext): boolean {
+	if (state.repo === "unknown") {
+		try {
+			state.repo =
+				String(git(["rev-parse", "--is-inside-work-tree"], ctx.cwd)).trim() === "true"
+					? "enabled"
+					: "disabled";
+		} catch {
+			state.repo = "disabled";
+		}
+	}
+	return state.repo === "enabled";
+}
 
 function takeCheckpoint(cwd: string, ctx?: ExtensionContext): void {
-	if (!state.enabled) return;
+	if (state.repo !== "enabled") return;
 	const tree = writeTreeSnapshot(cwd);
 	if (!tree) return;
 
@@ -100,7 +118,6 @@ function takeCheckpoint(cwd: string, ctx?: ExtensionContext): void {
 	try {
 		const commit = String(git(commitArgs, cwd)).trim();
 		git(["update-ref", REF, commit], cwd);
-		state.lastTree = tree;
 		state.undoPos = null;
 	} catch (err) {
 		ctx?.ui.notify(`Checkpoint failed: ${err instanceof Error ? err.message : String(err)}`, "warning");
@@ -167,37 +184,27 @@ function restoreToCommit(cwd: string, target: string): number {
 }
 
 export default function (pi: ExtensionAPI) {
-	function ensureEnabled(ctx: ExtensionContext): boolean {
-		if (state.enabled) return true;
-		try {
-			const inside = String(git(["rev-parse", "--is-inside-work-tree"], ctx.cwd)).trim();
-			if (inside !== "true") return false;
-			state.enabled = true;
-			return true;
-		} catch {
-			ctx.ui.notify("checkpoint: not a git repository — disabled for this session", "info");
-			return false;
-		}
-	}
-
 	pi.on("session_start", async (_event, ctx) => {
-		state.enabled = false;
-		state.lastTree = null;
+		state.repo = "unknown";
 		state.undoPos = null;
-		if (!ensureEnabled(ctx)) return;
+		if (!isGitRepo(ctx)) {
+			// Announce once per session; turn_start stays silent.
+			ctx.ui.notify("checkpoint: not a git repository — disabled for this session", "info");
+			return;
+		}
 		takeCheckpoint(ctx.cwd, ctx);
 	});
 
 	pi.on("turn_start", async (_event, ctx) => {
-		if (!ensureEnabled(ctx)) return;
+		if (!isGitRepo(ctx)) return;
 		takeCheckpoint(ctx.cwd, ctx);
 	});
 
 	pi.registerCommand("undo", {
 		description: "Revert working tree to before the last agent turn",
 		handler: async (_args, ctx) => {
-			if (!state.enabled || !ensureEnabled(ctx)) {
-				ctx.ui.notify("/undo: checkpointing is not active (not a git repo?)", "warning");
+			if (!isGitRepo(ctx)) {
+				ctx.ui.notify("/undo: checkpointing is not active (not a git repository)", "warning");
 				return;
 			}
 			const head = revParse(REF, ctx.cwd);
@@ -230,7 +237,10 @@ export default function (pi: ExtensionAPI) {
 	pi.registerCommand("checkpoints", {
 		description: "List recent pixit checkpoints",
 		handler: async (_args, ctx) => {
-			if (!state.enabled || !ensureEnabled(ctx)) return;
+			if (!isGitRepo(ctx)) {
+				ctx.ui.notify("/checkpoints: checkpointing is not active (not a git repository)", "warning");
+				return;
+			}
 			const head = revParse(REF, ctx.cwd);
 			if (!head) {
 				ctx.ui.notify("No checkpoints recorded yet", "info");
@@ -244,7 +254,8 @@ export default function (pi: ExtensionAPI) {
 					const [hash, ts, ...rest] = line.split(" ");
 					return `${hash}  ${new Date(Number(ts) * 1000).toLocaleString()}  ${rest.join(" ")}`;
 				});
-				ctx.ui.select("Recent checkpoints (newest first)", lines.map((l, i) => ({ value: String(i), label: l })));
+				// ui.select() renders plain strings; object options show up as "[object Object]".
+				await ctx.ui.select("Recent checkpoints (newest first)", lines);
 			} catch (err) {
 				ctx.ui.notify(`Failed to list checkpoints: ${err instanceof Error ? err.message : String(err)}`, "error");
 			}

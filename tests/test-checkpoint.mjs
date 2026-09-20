@@ -83,6 +83,71 @@ check(
 	`\n    got: ${JSON.stringify(readA())}`,
 );
 
+// --- /checkpoints must hand plain strings to ui.select ---
+// Object options render as "[object Object]" (ui.select maps each option to
+// { value: option, label: option } internally).
+const selectCalls = [];
+const uiCtx = {
+	cwd: tmp,
+	hasUI: true,
+	ui: {
+		notify: () => {},
+		select: async (title, options) => {
+			selectCalls.push({ title, options });
+			return undefined;
+		},
+	},
+};
+await commands["checkpoints"]("", uiCtx);
+const lastSelect = selectCalls.at(-1);
+check("/checkpoints opens a picker", !!lastSelect);
+check(
+	"/checkpoints options are plain strings",
+	!!lastSelect && lastSelect.options.length > 0 && lastSelect.options.every((o) => typeof o === "string"),
+	JSON.stringify(lastSelect?.options?.[0]),
+);
+
+// --- non-git directory: probe once, warn once, stay silent on later turns ---
+const plain = fs.mkdtempSync(path.join(os.tmpdir(), "pixit-nogit-"));
+const noticed = [];
+const nogitCtx = {
+	cwd: plain,
+	hasUI: true,
+	ui: {
+		notify: (message) => noticed.push(message),
+		select: async () => undefined,
+	},
+};
+const nogitHandlers = {};
+const nogitCommands = {};
+checkpoint({
+	on: (name, handler) => (nogitHandlers[name] = handler),
+	registerCommand: (name, opts) => (nogitCommands[name] = opts.handler),
+});
+
+await nogitHandlers["session_start"]({}, nogitCtx);
+await nogitHandlers["turn_start"]({}, nogitCtx);
+await nogitHandlers["turn_start"]({}, nogitCtx);
+await nogitHandlers["turn_start"]({}, nogitCtx);
+check(
+	"non-git: warned exactly once across turns",
+	noticed.filter((m) => m.includes("not a git repository")).length === 1,
+	JSON.stringify(noticed),
+);
+check(
+	"non-git: no checkpoint ref written",
+	!fs.existsSync(path.join(plain, ".git")),
+);
+
+noticed.length = 0;
+await nogitCommands["undo"]("", nogitCtx);
+check("/undo in non-git repo explains why", noticed.some((m) => m.includes("/undo")));
+
+noticed.length = 0;
+await nogitCommands["checkpoints"]("", nogitCtx);
+check("/checkpoints in non-git repo explains why", noticed.some((m) => m.includes("/checkpoints")));
+
 console.log(`\n${pass} passed, ${fail} failed`);
 fs.rmSync(tmp, { recursive: true, force: true });
+fs.rmSync(plain, { recursive: true, force: true });
 process.exit(fail > 0 ? 1 : 0);
