@@ -1,7 +1,7 @@
 {
 	"name": "@sentomk/pixit",
-	"version": "0.1.1",
-	"description": "SentoMK's pi coding agent extensions: questionnaire tool with /answer extraction, xedit, custom status footer",
+	"version": "0.2.0",
+	"description": "SentoMK's pi coding agent extensions: Vim prompt editing with custom mappings, questionnaire, xedit, and custom status footer",
 	"license": "MIT",
 	"repository": {
 		"type": "git",
